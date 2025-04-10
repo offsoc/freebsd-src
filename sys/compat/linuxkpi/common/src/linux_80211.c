@@ -79,8 +79,8 @@
 
 #define	LKPI_80211_WME
 #define	LKPI_80211_HW_CRYPTO
-/* #define	LKPI_80211_HT */
-/* #define	LKPI_80211_VHT */
+#define	LKPI_80211_HT
+#define	LKPI_80211_VHT
 
 #if defined(LKPI_80211_VHT) && !defined(LKPI_80211_HT)
 #define	LKPI_80211_HT
@@ -367,19 +367,17 @@ lkpi_80211_dump_stas(SYSCTL_HANDLER_ARGS)
 
 #if defined(LKPI_80211_HT)
 static void
-lkpi_sta_sync_ht_from_ni(struct ieee80211_sta *sta, struct ieee80211_node *ni, int *ht_rx_nss)
+lkpi_sta_sync_ht_from_ni(struct ieee80211_sta *sta, struct ieee80211_node *ni)
 {
 	struct ieee80211vap *vap;
 	uint8_t *ie;
 	struct ieee80211_ht_cap *htcap;
 	int i, rx_nss;
 
-	if ((ni->ni_flags & IEEE80211_NODE_HT) == 0)
+	if ((ni->ni_flags & IEEE80211_NODE_HT) == 0) {
+		sta->deflink.ht_cap.ht_supported = false;
 		return;
-
-	if (IEEE80211_IS_CHAN_HT(ni->ni_chan) &&
-	    IEEE80211_IS_CHAN_HT40(ni->ni_chan))
-		sta->deflink.bandwidth = IEEE80211_STA_RX_BW_40;
+	}
 
 	sta->deflink.ht_cap.ht_supported = true;
 
@@ -401,42 +399,151 @@ lkpi_sta_sync_ht_from_ni(struct ieee80211_sta *sta, struct ieee80211_node *ni, i
 	sta->deflink.ht_cap.cap = htcap->cap_info;
 	sta->deflink.ht_cap.mcs = htcap->mcs;
 
+	if ((sta->deflink.ht_cap.cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40) != 0)
+		sta->deflink.bandwidth = IEEE80211_STA_RX_BW_40;
+	else
+		sta->deflink.bandwidth = IEEE80211_STA_RX_BW_20;
+
+	/*
+	 * 802.11n-2009 20.6 Parameters for HT MCSs gives the mandatory/
+	 * optional MCS for Nss=1..4.  We need to check the first four
+	 * MCS sets from the Rx MCS Bitmask; then there is MCS 32 and
+	 * MCS33.. is UEQM.
+	 */
 	rx_nss = 0;
-	for (i = 0; i < nitems(htcap->mcs.rx_mask); i++) {
+	for (i = 0; i < 4; i++) {
 		if (htcap->mcs.rx_mask[i])
 			rx_nss++;
 	}
-	if (ht_rx_nss != NULL)
-		*ht_rx_nss = rx_nss;
+	if (rx_nss > 0)
+		sta->deflink.rx_nss = rx_nss;
 
-	IMPROVE("sta->wme, sta->deflink.agg.max*");
+	IMPROVE("sta->wme");
+
+	if (sta->deflink.ht_cap.cap & IEEE80211_HT_CAP_MAX_AMSDU)
+		sta->deflink.agg.max_amsdu_len = IEEE80211_MAX_MPDU_LEN_HT_7935;
+	else
+		sta->deflink.agg.max_amsdu_len = IEEE80211_MAX_MPDU_LEN_HT_3839;
+	sta->deflink.agg.max_rc_amsdu_len = IEEE80211_MAX_MPDU_LEN_HT_BA;
+#ifdef __handled_by_driver__	/* iwlwifi only? actually unused? */
+	for (i = 0; i < nitems(sta.deflink.agg.max_tid_amsdu_len); i++) {
+		sta->deflink.agg.max_tid_amsdu_len[j] = ;
+	}
+#endif
 }
 #endif
 
 #if defined(LKPI_80211_VHT)
 static void
-lkpi_sta_sync_vht_from_ni(struct ieee80211_sta *sta, struct ieee80211_node *ni, int *vht_rx_nss)
+lkpi_sta_sync_vht_from_ni(struct ieee80211_sta *sta, struct ieee80211_node *ni)
 {
+	uint32_t width;
+	int rx_nss;
+	uint16_t rx_mcs_map;
+	uint8_t mcs;
 
-	if ((ni->ni_flags & IEEE80211_NODE_VHT) == 0)
+	if ((ni->ni_flags & IEEE80211_NODE_VHT) == 0) {
+		sta->deflink.vht_cap.vht_supported = false;
 		return;
-
-	if (IEEE80211_IS_CHAN_VHT(ni->ni_chan)) {
-#ifdef __notyet__
-		if (IEEE80211_IS_CHAN_VHT80P80(ni->ni_chan)) {
-			sta->deflink.bandwidth = IEEE80211_STA_RX_BW_160; /* XXX? */
-		} else
-#endif
-		if (IEEE80211_IS_CHAN_VHT160(ni->ni_chan))
-			sta->deflink.bandwidth = IEEE80211_STA_RX_BW_160;
-		else if (IEEE80211_IS_CHAN_VHT80(ni->ni_chan))
-			sta->deflink.bandwidth = IEEE80211_STA_RX_BW_80;
 	}
 
-	IMPROVE("VHT sync ni to sta");
-	return;
+	sta->deflink.vht_cap.vht_supported = true;
+
+	sta->deflink.vht_cap.cap = ni->ni_vhtcap;
+	sta->deflink.vht_cap.vht_mcs = ni->ni_vht_mcsinfo;
+
+	/*
+	 * If VHT20/40 are selected do not update the bandwidth
+	 * from HT but stya on VHT.
+	 */
+	if (ni->ni_vht_chanwidth == IEEE80211_VHT_CHANWIDTH_USE_HT)
+		goto skip_bw;
+
+	width = (sta->deflink.vht_cap.cap & IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_MASK);
+	switch (width) {
+#if 0
+	case IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_160MHZ:
+	case IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ:
+		sta->deflink.bandwidth = IEEE80211_STA_RX_BW_160;
+		break;
+#endif
+	default:
+		/* Check if we do support 160Mhz somehow after all. */
+#if 0
+		if ((sta->deflink.vht_cap.cap & IEEE80211_VHT_CAP_EXT_NSS_BW_MASK) != 0)
+			sta->deflink.bandwidth = IEEE80211_STA_RX_BW_160;
+		else
+#endif
+			sta->deflink.bandwidth = IEEE80211_STA_RX_BW_80;
+	}
+skip_bw:
+
+	rx_nss = 0;
+	rx_mcs_map = sta->deflink.vht_cap.vht_mcs.rx_mcs_map;
+	for (int i = 7; i >= 0; i--) {
+		mcs = rx_mcs_map >> (2 * i);
+		mcs &= 0x3;
+		if (mcs != IEEE80211_VHT_MCS_NOT_SUPPORTED) {
+			rx_nss = i + 1;
+			break;
+		}
+	}
+	if (rx_nss > 0)
+		sta->deflink.rx_nss = rx_nss;
+
+	switch (sta->deflink.vht_cap.cap & IEEE80211_VHT_CAP_MAX_MPDU_MASK) {
+	case IEEE80211_VHT_CAP_MAX_MPDU_LENGTH_11454:
+		sta->deflink.agg.max_amsdu_len = IEEE80211_MAX_MPDU_LEN_VHT_11454;
+		break;
+	case IEEE80211_VHT_CAP_MAX_MPDU_LENGTH_7991:
+		sta->deflink.agg.max_amsdu_len = IEEE80211_MAX_MPDU_LEN_VHT_7991;
+		break;
+	case IEEE80211_VHT_CAP_MAX_MPDU_LENGTH_3895:
+	default:
+		sta->deflink.agg.max_amsdu_len = IEEE80211_MAX_MPDU_LEN_VHT_3895;
+		break;
+	}
 }
 #endif
+
+static void
+lkpi_sta_sync_from_ni(struct ieee80211_sta *sta, struct ieee80211_node *ni)
+{
+
+#if defined(LKPI_80211_HT)
+	lkpi_sta_sync_ht_from_ni(sta, ni);
+#endif
+#if defined(LKPI_80211_VHT)
+	lkpi_sta_sync_vht_from_ni(sta, ni);
+#endif
+}
+
+static uint8_t
+lkpi_get_max_rx_chains(struct ieee80211_node *ni)
+{
+	uint8_t chains;
+#if defined(LKPI_80211_HT) || defined(LKPI_80211_VHT)
+	struct lkpi_sta *lsta;
+	struct ieee80211_sta *sta;
+
+	lsta = ni->ni_drv_data;
+	sta = LSTA_TO_STA(lsta);
+#endif
+
+	chains = 1;
+#if defined(LKPI_80211_HT)
+	IMPROVE("We should factor counting MCS/NSS out for sync and here");
+	if (sta->deflink.ht_cap.ht_supported)
+		chains = MAX(chains, sta->deflink.rx_nss);
+#endif
+
+#if defined(LKPI_80211_VHT)
+	if (sta->deflink.vht_cap.vht_supported)
+		chains = MAX(chains, sta->deflink.rx_nss);
+#endif
+
+	return (chains);
+}
 
 static void
 lkpi_lsta_dump(struct lkpi_sta *lsta, struct ieee80211_node *ni,
@@ -480,8 +587,6 @@ lkpi_lsta_alloc(struct ieee80211vap *vap, const uint8_t mac[IEEE80211_ADDR_LEN],
 	struct ieee80211_vif *vif;
 	struct ieee80211_sta *sta;
 	int band, i, tid;
-	int ht_rx_nss;
-	int vht_rx_nss;
 
 	lsta = malloc(sizeof(*lsta) + hw->sta_data_size, M_LKPI80211,
 	    M_NOWAIT | M_ZERO);
@@ -581,18 +686,9 @@ lkpi_lsta_alloc(struct ieee80211vap *vap, const uint8_t mac[IEEE80211_ADDR_LEN],
 	sta->deflink.bandwidth = IEEE80211_STA_RX_BW_20;
 	sta->deflink.rx_nss = 1;
 
-	ht_rx_nss = 0;
-#if defined(LKPI_80211_HT)
-	lkpi_sta_sync_ht_from_ni(sta, ni, &ht_rx_nss);
-#endif
-	vht_rx_nss = 0;
-#if defined(LKPI_80211_VHT)
-	lkpi_sta_sync_vht_from_ni(sta, ni, &vht_rx_nss);
-#endif
+	lkpi_sta_sync_from_ni(sta, ni);
 
-	sta->deflink.rx_nss = MAX(ht_rx_nss, sta->deflink.rx_nss);
-	sta->deflink.rx_nss = MAX(vht_rx_nss, sta->deflink.rx_nss);
-	IMPROVE("he, ... smps_mode, ..");
+	IMPROVE("he, eht, bw_320, ... smps_mode, ..");
 
 	/* Link configuration. */
 	IEEE80211_ADDR_COPY(sta->deflink.addr, sta->addr);
@@ -1039,9 +1135,7 @@ _lkpi_iv_key_delete(struct ieee80211vap *vap, const struct ieee80211_key *k)
 	struct ieee80211_sta *sta;
 	struct ieee80211_node *ni;
 	struct ieee80211_key_conf *kc;
-	struct ieee80211_node_table *nt;
 	int error;
-	bool islocked;
 
 	ic = vap->iv_ic;
 	lhw = ic->ic_softc;
@@ -1076,13 +1170,6 @@ _lkpi_iv_key_delete(struct ieee80211vap *vap, const struct ieee80211_key *k)
 		return (1);
 	}
 
-	/* This is inconsistent net80211 locking to be fixed one day. */
-	nt = &ic->ic_sta;
-	islocked = IEEE80211_NODE_IS_LOCKED(nt);
-	if (islocked)
-		IEEE80211_NODE_UNLOCK(nt);
-
-	wiphy_lock(hw->wiphy);
 	kc = lsta->kc[k->wk_keyix];
 	/* Re-check under lock. */
 	if (kc == NULL) {
@@ -1114,9 +1201,6 @@ _lkpi_iv_key_delete(struct ieee80211vap *vap, const struct ieee80211_key *k)
 	free(kc, M_LKPI80211);
 	error = 1;
 out:
-	wiphy_unlock(hw->wiphy);
-	if (islocked)
-		IEEE80211_NODE_LOCK(nt);
 	ieee80211_free_node(ni);
 	return (error);
 }
@@ -1166,7 +1250,6 @@ _lkpi_iv_key_set(struct ieee80211vap *vap, const struct ieee80211_key *k)
 	}
 	sta = LSTA_TO_STA(lsta);
 
-	wiphy_lock(hw->wiphy);
 	if (lsta->kc[k->wk_keyix] != NULL) {
 		IMPROVE("Still in firmware? Del first. Can we assert this cannot happen?");
 		ic_printf(ic, "%s: sta %6D found with key information\n",
@@ -1187,7 +1270,6 @@ _lkpi_iv_key_set(struct ieee80211vap *vap, const struct ieee80211_key *k)
 		ic_printf(ic, "%s: CIPHER SUITE %#x (%s) not supported\n",
 		    __func__, lcipher, lkpi_cipher_suite_to_name(lcipher));
 		IMPROVE();
-		wiphy_unlock(hw->wiphy);
 		ieee80211_free_node(ni);
 		return (0);
 	}
@@ -1228,7 +1310,6 @@ _lkpi_iv_key_set(struct ieee80211vap *vap, const struct ieee80211_key *k)
 		    __func__, SET_KEY, "SET", sta->addr, ":", error);
 		lsta->kc[k->wk_keyix] = NULL;
 		free(kc, M_LKPI80211);
-		wiphy_unlock(hw->wiphy);
 		ieee80211_free_node(ni);
 		return (0);
 	}
@@ -1241,7 +1322,6 @@ _lkpi_iv_key_set(struct ieee80211vap *vap, const struct ieee80211_key *k)
 		    kc, kc->keyidx, kc->hw_key_idx, kc->flags);
 #endif
 
-	wiphy_unlock(hw->wiphy);
 	ieee80211_free_node(ni);
 	return (1);
 }
@@ -1251,6 +1331,86 @@ lkpi_iv_key_set(struct ieee80211vap *vap, const struct ieee80211_key *k)
 {
 
 	return (_lkpi_iv_key_set(vap, k));
+}
+
+static void
+lkpi_iv_key_update_begin(struct ieee80211vap *vap)
+{
+	struct ieee80211_node_table *nt;
+	struct ieee80211com *ic;
+	struct lkpi_hw *lhw;
+	struct ieee80211_hw *hw;
+	struct lkpi_vif *lvif;
+	bool islocked;
+
+	ic = vap->iv_ic;
+	lhw = ic->ic_softc;
+	hw = LHW_TO_HW(lhw);
+	lvif = VAP_TO_LVIF(vap);
+	nt = &ic->ic_sta;
+
+	islocked = IEEE80211_NODE_IS_LOCKED(nt);
+
+#ifdef LINUXKPI_DEBUG_80211
+	if (linuxkpi_debug_80211 & D80211_TRACE_HW_CRYPTO)
+		ic_printf(vap->iv_ic, "%s: tid %d vap %p nt %p %slocked "
+		    "lvif nt_unlocked %d\n", __func__, curthread->td_tid,
+		    vap, nt, islocked ? "" : "un", lvif->nt_unlocked);
+#endif
+
+	/* This is inconsistent net80211 locking to be fixed one day. */
+	if (islocked)
+		IEEE80211_NODE_UNLOCK(nt);
+
+	wiphy_lock(hw->wiphy);
+
+	/*
+	 * nt_unlocked could be a bool given we are under the lock and there
+	 * must only be a single thread.
+	 * In case anything in the future disturbs the order the refcnt will
+	 * help us catching problems a lot easier.
+	 */
+	if (islocked)
+		refcount_acquire(&lvif->nt_unlocked);
+}
+
+static void
+lkpi_iv_key_update_end(struct ieee80211vap *vap)
+{
+	struct ieee80211_node_table *nt;
+	struct ieee80211com *ic;
+	struct lkpi_hw *lhw;
+	struct ieee80211_hw *hw;
+	struct lkpi_vif *lvif;
+	bool islocked;
+
+	ic = vap->iv_ic;
+	lhw = ic->ic_softc;
+	hw = LHW_TO_HW(lhw);
+	lvif = VAP_TO_LVIF(vap);
+	nt = &ic->ic_sta;
+
+	islocked = IEEE80211_NODE_IS_LOCKED(nt);
+	MPASS(!islocked);
+
+#ifdef LINUXKPI_DEBUG_80211
+	if (linuxkpi_debug_80211 & D80211_TRACE_HW_CRYPTO)
+		ic_printf(vap->iv_ic, "%s: tid %d vap %p nt %p %slocked "
+		    "lvif nt_unlocked %d\n", __func__, curthread->td_tid,
+		    vap, nt, islocked ? "" : "un", lvif->nt_unlocked);
+#endif
+
+	/*
+	 * Check under lock; see comment in lkpi_iv_key_update_begin().
+	 * In case the refcnt gets out of sync locking in net80211 will
+	 * quickly barf as well (trying to unlock a lock not held).
+	 */
+	islocked = refcount_release_if_last(&lvif->nt_unlocked);
+	wiphy_unlock(hw->wiphy);
+
+	/* This is inconsistent net80211 locking to be fixed one day. */
+	if (islocked)
+		IEEE80211_NODE_LOCK(nt);
 }
 #endif
 
@@ -1666,45 +1826,52 @@ lkpi_sta_scan_to_auth(struct ieee80211vap *vap, enum ieee80211_state nstate, int
 		chanctx_conf = &lchanctx->chanctx_conf;
 	}
 
-	chanctx_conf->rx_chains_dynamic = 1;
 	chanctx_conf->rx_chains_static = 1;
+	chanctx_conf->rx_chains_dynamic = 1;
 	chanctx_conf->radar_enabled =
 	    (chan->flags & IEEE80211_CHAN_RADAR) ? true : false;
 	chanctx_conf->def.chan = chan;
 	chanctx_conf->def.width = NL80211_CHAN_WIDTH_20_NOHT;
-	chanctx_conf->def.center_freq1 = chan->center_freq;
-	chanctx_conf->def.center_freq2 = 0;
+	chanctx_conf->def.center_freq1 = ieee80211_get_channel_center_freq1(ni->ni_chan);
+	chanctx_conf->def.center_freq2 = ieee80211_get_channel_center_freq2(ni->ni_chan);
 	IMPROVE("Check vht_cap from band not just chan?");
 	KASSERT(ni->ni_chan != NULL && ni->ni_chan != IEEE80211_CHAN_ANYC,
 	   ("%s:%d: ni %p ni_chan %p\n", __func__, __LINE__, ni, ni->ni_chan));
 #ifdef LKPI_80211_HT
 	if (IEEE80211_IS_CHAN_HT(ni->ni_chan)) {
-		if (IEEE80211_IS_CHAN_HT40(ni->ni_chan)) {
+		if (IEEE80211_IS_CHAN_HT40(ni->ni_chan))
 			chanctx_conf->def.width = NL80211_CHAN_WIDTH_40;
-		} else
+		else
 			chanctx_conf->def.width = NL80211_CHAN_WIDTH_20;
 	}
 #endif
 #ifdef LKPI_80211_VHT
 	if (IEEE80211_IS_CHAN_VHT(ni->ni_chan)) {
 #ifdef __notyet__
-		if (IEEE80211_IS_CHAN_VHT80P80(ni->ni_chan)) {
+		if (IEEE80211_IS_CHAN_VHT80P80(ni->ni_chan))
 			chanctx_conf->def.width = NL80211_CHAN_WIDTH_80P80;
-			chanctx_conf->def.center_freq2 = 0;	/* XXX */
-		} else
-#endif
-		if (IEEE80211_IS_CHAN_VHT160(ni->ni_chan))
+		else if (IEEE80211_IS_CHAN_VHT160(ni->ni_chan))
 			chanctx_conf->def.width = NL80211_CHAN_WIDTH_160;
-		else if (IEEE80211_IS_CHAN_VHT80(ni->ni_chan))
+		else
+#endif
+		if (IEEE80211_IS_CHAN_VHT80(ni->ni_chan))
 			chanctx_conf->def.width = NL80211_CHAN_WIDTH_80;
 	}
 #endif
+	chanctx_conf->rx_chains_dynamic = lkpi_get_max_rx_chains(ni);
 	/* Responder ... */
-	chanctx_conf->min_def.chan = chan;
+#if 0
+	chanctx_conf->min_def.chan = chanctx_conf->def.chan;
 	chanctx_conf->min_def.width = NL80211_CHAN_WIDTH_20_NOHT;
-	chanctx_conf->min_def.center_freq1 = chan->center_freq;
-	chanctx_conf->min_def.center_freq2 = 0;
-	IMPROVE("currently 20_NOHT min_def only");
+#ifdef LKPI_80211_HT
+	if (IEEE80211_IS_CHAN_HT(ni->ni_chan) || IEEE80211_IS_CHAN_VHT(ni->ni_chan))
+		chanctx_conf->min_def.width = NL80211_CHAN_WIDTH_20;
+#endif
+	chanctx_conf->min_def.center_freq1 = chanctx_conf->def.center_freq1;
+	chanctx_conf->min_def.center_freq2 = chanctx_conf->def.center_freq2;
+#else
+	chanctx_conf->min_def = chanctx_conf->def;
+#endif
 
 	/* Set bss info (bss_info_changed). */
 	bss_changed = 0;
@@ -1737,15 +1904,6 @@ lkpi_sta_scan_to_auth(struct ieee80211vap *vap, enum ieee80211_state nstate, int
 			vif->bss_conf.chanreq.oper.width = chanctx_conf->def.width;
 			vif->bss_conf.chanreq.oper.center_freq1 =
 			    chanctx_conf->def.center_freq1;
-#ifdef LKPI_80211_HT
-			if (vif->bss_conf.chanreq.oper.width == NL80211_CHAN_WIDTH_40) {
-				/* Note: it is 10 not 20. */
-				if (IEEE80211_IS_CHAN_HT40U(ni->ni_chan))
-					vif->bss_conf.chanreq.oper.center_freq1 += 10;
-				else if (IEEE80211_IS_CHAN_HT40D(ni->ni_chan))
-					vif->bss_conf.chanreq.oper.center_freq1 -= 10;
-			}
-#endif
 			vif->bss_conf.chanreq.oper.center_freq2 =
 			    chanctx_conf->def.center_freq2;
 		} else {
@@ -2531,10 +2689,9 @@ lkpi_sta_assoc_to_run(struct ieee80211vap *vap, enum ieee80211_state nstate, int
 		IMPROVE("net80211 does not consider node authorized");
 	}
 
-#if defined(LKPI_80211_HT)
+	sta->deflink.rx_nss = MAX(1, sta->deflink.rx_nss);
 	IMPROVE("Is this the right spot, has net80211 done all updates already?");
-	lkpi_sta_sync_ht_from_ni(sta, ni, NULL);
-#endif
+	lkpi_sta_sync_from_ni(sta, ni);
 
 	/* Update sta_state (ASSOC to AUTHORIZED). */
 	KASSERT(lsta != NULL, ("%s: ni %p lsta is NULL\n", __func__, ni));
@@ -3320,6 +3477,7 @@ lkpi_ic_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ],
 	mtx_init(&lvif->mtx, "lvif", NULL, MTX_DEF);
 	INIT_LIST_HEAD(&lvif->lsta_list);
 	lvif->lvif_bss = NULL;
+	refcount_init(&lvif->nt_unlocked, 0);
 	lvif->lvif_bss_synched = false;
 	vap = LVIF_TO_VAP(lvif);
 
@@ -3452,6 +3610,8 @@ lkpi_ic_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ],
 	if (lkpi_hwcrypto && lhw->ops->set_key != NULL) {
 		vap->iv_key_set = lkpi_iv_key_set;
 		vap->iv_key_delete = lkpi_iv_key_delete;
+		vap->iv_key_update_begin = lkpi_iv_key_update_begin;
+		vap->iv_key_update_end = lkpi_iv_key_update_end;
 	}
 #endif
 
@@ -3472,6 +3632,10 @@ lkpi_ic_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ],
 	 */
 	if (!lkpi_hwcrypto && ieee80211_hw_check(hw, AMPDU_AGGREGATION))
 		vap->iv_flags_ht &= ~IEEE80211_FHT_AMPDU_RX;
+#endif
+#if defined(LKPI_80211_HT)
+	/* 20250125-BZ Keep A-MPDU TX cleared until we sorted out AddBA for all drivers. */
+	vap->iv_flags_ht &= ~IEEE80211_FHT_AMPDU_TX;
 #endif
 
 	if (hw->max_listen_interval == 0)
@@ -6127,14 +6291,12 @@ lkpi_convert_rx_status(struct ieee80211_hw *hw,
 	}
 	if (rx_status->flag & RX_FLAG_MMIC_STRIPPED)
 		rx_stats->c_pktflags |= IEEE80211_RX_F_MMIC_STRIP;
-	if (rx_status->flag & RX_FLAG_MIC_STRIPPED) {
-		/* net80211 re-uses M[ichael]MIC for MIC too. Confusing. */
-		rx_stats->c_pktflags |= IEEE80211_RX_F_MMIC_STRIP;
-	}
+	if (rx_status->flag & RX_FLAG_MMIC_ERROR)
+		rx_stats->c_pktflags |= IEEE80211_RX_F_FAIL_MMIC;
+	if (rx_status->flag & RX_FLAG_MIC_STRIPPED)
+		rx_stats->c_pktflags |= IEEE80211_RX_F_MIC_STRIP;
 	if (rx_status->flag & RX_FLAG_IV_STRIPPED)
 		rx_stats->c_pktflags |= IEEE80211_RX_F_IV_STRIP;
-	if (rx_status->flag & RX_FLAG_MMIC_ERROR)
-		rx_stats->c_pktflags |= IEEE80211_RX_F_FAIL_MIC;
 	if (rx_status->flag & RX_FLAG_FAILED_FCS_CRC)
 		rx_stats->c_pktflags |= IEEE80211_RX_F_FAIL_FCSCRC;
 #endif
@@ -6824,12 +6986,6 @@ linuxkpi_ieee80211_tx_status_ext(struct ieee80211_hw *hw,
 	}
 
 	if (ni != NULL) {
-		int ridx __unused;
-#ifdef LINUXKPI_DEBUG_80211
-		int old_rate;
-
-		old_rate = ni->ni_vap->iv_bss->ni_txrate;
-#endif
 		txs.pktlen = skb->len;
 		txs.flags |= IEEE80211_RATECTL_STATUS_PKTLEN;
 		if (info->status.rates[0].count > 1) {
@@ -6846,16 +7002,14 @@ linuxkpi_ieee80211_tx_status_ext(struct ieee80211_hw *hw,
 			txs.flags |= IEEE80211_RATECTL_STATUS_RSSI;
 		}
 
-		IMPROVE("only update of rate matches but that requires us to get a proper rate");
+		IMPROVE("only update rate if needed but that requires us to get a proper rate from mo_sta_statistics");
 		ieee80211_ratectl_tx_complete(ni, &txs);
-		ridx = ieee80211_ratectl_rate(ni->ni_vap->iv_bss, NULL, 0);
+		ieee80211_ratectl_rate(ni->ni_vap->iv_bss, NULL, 0);
 
 #ifdef LINUXKPI_DEBUG_80211
 		if (linuxkpi_debug_80211 & D80211_TRACE_TX) {
-			printf("TX-RATE: %s: old %d new %d ridx %d, "
-			    "long_retries %d\n", __func__,
-			    old_rate, ni->ni_vap->iv_bss->ni_txrate,
-			    ridx, txs.long_retries);
+			printf("TX-RATE: %s: long_retries %d\n", __func__,
+			    txs.long_retries);
 		}
 #endif
 	}

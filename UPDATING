@@ -27,6 +27,18 @@ NOTE TO PEOPLE WHO THINK THAT FreeBSD 15.x IS SLOW:
 	world, or to merely disable the most expensive debugging functionality
 	at runtime, run "ln -s 'abort:false,junk:false' /etc/malloc.conf".)
 
+20250314:
+	We now use LLVM's binary utilities (nm, objcopy, etc.) by default.
+	The WITHOUT_LLVM_BINUTILS src.conf(5) knob can be used to revert to
+	ELF Tool Chain tools if desired.
+
+20250303:
+	Commit 4a77657cbc01 changed the ABI between ipfw(8) and ipfw(4).
+	Please note that the old ipfw(8) binary will not work with the new
+	ipfw(4) module. Therefore, it is recommended to disable ipfw during
+	the upgrade, otherwise the host system may become inaccessible because
+	ipfw rules cannot be installed with the old binary.
+
 20250214:
 	Commit 4517fbfd4251 modified the internal API between the
 	nfscommon and nfscl modules.  As such, both of these modules
@@ -2176,7 +2188,7 @@ FOOTNOTES:
 	happens automatically. If all your modules come from ports, then adding
 	the port origin directories to PORTS_MODULES instead is also automatic
 	and effective, eg:
-	     PORTS_MODULES+=x11/nvidia-driver
+	     PORTS_MODULES+=graphics/drm-kmod graphics/nvidia-drm-kmod
 
 	[3] From the bootblocks, boot -s, and then do
 		fsck -p

@@ -1373,6 +1373,9 @@ MLINKS+=ifnet.9 if_addmulti.9 \
 	ifnet.9 ifqueue.9 \
 	ifnet.9 ifunit.9 \
 	ifnet.9 ifunit_ref.9
+# IfAPI
+MLINKS+=ifnet.9 ifapi.9
+
 MLINKS+=insmntque.9 insmntque1.9
 MLINKS+=intr_event.9 intr_event_add_handler.9 \
 	intr_event.9 intr_event_create.9 \
@@ -1787,10 +1790,12 @@ MLINKS+=panic.9 vpanic.9 \
 	panic.9 KERNEL_PANICKED.9
 MLINKS+=pci.9 pci_alloc_msi.9 \
 	pci.9 pci_alloc_msix.9 \
+	pci.9 pci_clear_pme.9 \
 	pci.9 pci_disable_busmaster.9 \
 	pci.9 pci_disable_io.9 \
 	pci.9 pci_enable_busmaster.9 \
 	pci.9 pci_enable_io.9 \
+	pci.9 pci_enable_pme.9 \
 	pci.9 pci_find_bsf.9 \
 	pci.9 pci_find_cap.9 \
 	pci.9 pci_find_dbsf.9 \
@@ -1803,6 +1808,7 @@ MLINKS+=pci.9 pci_alloc_msi.9 \
 	pci.9 pci_get_powerstate.9 \
 	pci.9 pci_get_vpd_ident.9 \
 	pci.9 pci_get_vpd_readonly.9 \
+	pci.9 pci_has_pm.9 \
 	pci.9 pci_iov_attach.9 \
 	pci.9 pci_iov_attach_name.9 \
 	pci.9 pci_iov_detach.9 \

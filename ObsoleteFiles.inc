@@ -51,6 +51,29 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 20250331: removal of TCPPCAP
+OLD_FILES+=usr/include/netinet/tcp_pcap.h
+
+# 20250310: caroot bundle updated
+OLD_FILES+=usr/share/certs/trusted/Entrust_Root_Certification_Authority_-_G4.pem
+OLD_FILES+=usr/share/certs/trusted/SecureSign_RootCA11.pem
+OLD_FILES+=usr/share/certs/trusted/Security_Communication_RootCA3.pem
+OLD_FILES+=usr/share/certs/trusted/SwissSign_Silver_CA_-_G2.pem
+OLD_FILES+=usr/share/certs/untrusted/AddTrust_External_Root.pem
+OLD_FILES+=usr/share/certs/untrusted/AddTrust_Low-Value_Services_Root.pem
+OLD_FILES+=usr/share/certs/untrusted/Staat_der_Nederlanden_Root_CA_-_G2.pem
+OLD_FILES+=usr/share/certs/untrusted/Cybertrust_Global_Root.pem
+OLD_FILES+=usr/share/certs/untrusted/DST_Root_CA_X3.pem
+OLD_FILES+=usr/share/certs/untrusted/GlobalSign_Root_CA_-_R2.pem
+OLD_FILES+=usr/share/certs/untrusted/QuoVadis_Root_CA.pem
+OLD_FILES+=usr/share/certs/untrusted/Sonera_Class_2_Root_CA.pem
+OLD_FILES+=usr/share/certs/untrusted/GeoTrust_Global_CA.pem
+OLD_FILES+=usr/share/certs/untrusted/Staat_der_Nederlanden_EV_Root_CA.pem
+OLD_FILES+=usr/share/certs/untrusted/E-Tugra_Certification_Authority.pem
+OLD_FILES+=usr/share/certs/untrusted/Hongkong_Post_Root_CA_1.pem
+OLD_FILES+=usr/share/certs/untrusted/Security_Communication_Root_CA.pem
+OLD_FILES+=usr/share/certs/untrusted/Trustis_FPS_Root_CA.pem
+
 # 20250205: bus_generic_attach.9 removed after the function was deprecated
 OLD_FILES+=usr/share/man/man9/bus_generic_attach.9.gz
 
@@ -12453,8 +12476,6 @@ OLD_FILES+=usr/bin/llvm-pdbdump
 OLD_FILES+=usr/share/man/man2/pdwait4.2.gz
 # 20170610: chown-f_test replaced by chown_test
 OLD_FILES+=usr/tests/usr.sbin/chown/chown-f_test
-# 20170609: drop obsolete manpage link (if_rtwn.ko -> rtwn.ko)
-OLD_FILES+=usr/share/man/man4/if_rtwn.4.gz
 # 20170531: removal of groff
 OLD_FILES+=usr/bin/addftinfo
 OLD_FILES+=usr/bin/afmtodit
@@ -13569,9 +13590,6 @@ OLD_FILES+=usr/share/man/man1/rlog.1.gz
 OLD_FILES+=usr/share/man/man5/rcsfile.5.gz
 # 20161010: remove link to removed m_getclr(9) macro
 OLD_FILES+=usr/share/man/man9/m_getclr.9.gz
-# 20161003: MK_ELFCOPY_AS_OBJCOPY option retired
-OLD_FILES+=usr/bin/elfcopy
-OLD_FILES+=usr/share/man/man1/elfcopy.1.gz
 # 20160906: libkqueue tests moved to /usr/tests/sys/kqueue/libkqueue
 OLD_FILES+=usr/tests/sys/kqueue/kqtest
 OLD_FILES+=usr/tests/sys/kqueue/kqueue_test

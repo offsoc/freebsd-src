@@ -57,11 +57,11 @@
 
 #ifdef INET
 #include <netinet/in_var.h>
-#endif
+#endif /* INET */
 
 #ifdef INET6
 #include <netinet6/in6_var.h>
-#endif
+#endif /* INET6 */
 
 
 /*
@@ -94,7 +94,7 @@ pf_hash(struct pf_addr *inaddr, struct pf_addr *hash,
 		uint64_t hash64;
 		uint32_t hash32[2];
 	} h;
-#endif
+#endif /* INET6 */
 	uint64_t	 res = 0;
 
 	_Static_assert(sizeof(*key) >= SIPHASH_KEY_LENGTH, "");
@@ -122,6 +122,8 @@ pf_hash(struct pf_addr *inaddr, struct pf_addr *hash,
 		hash->addr32[3] = ~h.hash32[0];
 		break;
 #endif /* INET6 */
+	default:
+		unhandled_af(af);
 	}
 	return (res);
 }
@@ -497,6 +499,8 @@ pf_map_addr(sa_family_t af, struct pf_krule *r, struct pf_addr *saddr,
 			rmask = &rpool->cur->addr.p.dyn->pfid_mask6;
 			break;
 #endif /* INET6 */
+		default:
+			unhandled_af(af);
 		}
 	} else if (rpool->cur->addr.type == PF_ADDR_TABLE) {
 		if (!PF_POOL_DYNTYPE(rpool->opts)) {
@@ -518,7 +522,10 @@ pf_map_addr(sa_family_t af, struct pf_krule *r, struct pf_addr *saddr,
 	case PF_POOL_RANDOM:
 		if (rpool->cur->addr.type == PF_ADDR_TABLE) {
 			cnt = rpool->cur->addr.p.tbl->pfrkt_cnt;
-			rpool->tblidx = (int)arc4random_uniform(cnt);
+			if (cnt == 0)
+				rpool->tblidx = 0;
+			else
+				rpool->tblidx = (int)arc4random_uniform(cnt);
 			memset(&rpool->counter, 0, sizeof(rpool->counter));
 			if (pfr_pool_get(rpool->cur->addr.p.tbl,
 			    &rpool->tblidx, &rpool->counter, af, NULL)) {
@@ -528,7 +535,10 @@ pf_map_addr(sa_family_t af, struct pf_krule *r, struct pf_addr *saddr,
 			PF_ACPY(naddr, &rpool->counter, af);
 		} else if (rpool->cur->addr.type == PF_ADDR_DYNIFTL) {
 			cnt = rpool->cur->addr.p.dyn->pfid_kt->pfrkt_cnt;
-			rpool->tblidx = (int)arc4random_uniform(cnt);
+			if (cnt == 0)
+				rpool->tblidx = 0;
+			else
+				rpool->tblidx = (int)arc4random_uniform(cnt);
 			memset(&rpool->counter, 0, sizeof(rpool->counter));
 			if (pfr_pool_get(rpool->cur->addr.p.dyn->pfid_kt,
 			    &rpool->tblidx, &rpool->counter, af,
@@ -583,7 +593,10 @@ pf_map_addr(sa_family_t af, struct pf_krule *r, struct pf_addr *saddr,
 		    pf_hash(saddr, (struct pf_addr *)&hash, &rpool->key, af);
 		if (rpool->cur->addr.type == PF_ADDR_TABLE) {
 			cnt = rpool->cur->addr.p.tbl->pfrkt_cnt;
-			rpool->tblidx = (int)(hashidx % cnt);
+			if (cnt == 0)
+				rpool->tblidx = 0;
+			else
+				rpool->tblidx = (int)(hashidx % cnt);
 			memset(&rpool->counter, 0, sizeof(rpool->counter));
 			if (pfr_pool_get(rpool->cur->addr.p.tbl,
 			    &rpool->tblidx, &rpool->counter, af, NULL)) {
@@ -593,7 +606,10 @@ pf_map_addr(sa_family_t af, struct pf_krule *r, struct pf_addr *saddr,
 			PF_ACPY(naddr, &rpool->counter, af);
 		} else if (rpool->cur->addr.type == PF_ADDR_DYNIFTL) {
 			cnt = rpool->cur->addr.p.dyn->pfid_kt->pfrkt_cnt;
-			rpool->tblidx = (int)(hashidx % cnt);
+			if (cnt == 0)
+				rpool->tblidx = 0;
+			else
+				rpool->tblidx = (int)(hashidx % cnt);
 			memset(&rpool->counter, 0, sizeof(rpool->counter));
 			if (pfr_pool_get(rpool->cur->addr.p.dyn->pfid_kt,
 			    &rpool->tblidx, &rpool->counter, af,
@@ -1053,37 +1069,19 @@ pf_get_transaddr_af(struct pf_krule *r, struct pf_pdesc *pd)
 	}
 
 	if (pd->proto == IPPROTO_ICMPV6 && pd->naf == AF_INET) {
-		if (pd->dir == PF_IN) {
-			NTOHS(pd->ndport);
-			if (pd->ndport == ICMP6_ECHO_REQUEST)
-				pd->ndport = ICMP_ECHO;
-			else if (pd->ndport == ICMP6_ECHO_REPLY)
-				pd->ndport = ICMP_ECHOREPLY;
-			HTONS(pd->ndport);
-		} else {
-			NTOHS(pd->nsport);
-			if (pd->nsport == ICMP6_ECHO_REQUEST)
-				pd->nsport = ICMP_ECHO;
-			else if (pd->nsport == ICMP6_ECHO_REPLY)
-				pd->nsport = ICMP_ECHOREPLY;
-			HTONS(pd->nsport);
-		}
+		pd->ndport = ntohs(pd->ndport);
+		if (pd->ndport == ICMP6_ECHO_REQUEST)
+			pd->ndport = ICMP_ECHO;
+		else if (pd->ndport == ICMP6_ECHO_REPLY)
+			pd->ndport = ICMP_ECHOREPLY;
+		pd->ndport = htons(pd->ndport);
 	} else if (pd->proto == IPPROTO_ICMP && pd->naf == AF_INET6) {
-		if (pd->dir == PF_IN) {
-			NTOHS(pd->ndport);
-			if (pd->ndport == ICMP_ECHO)
-				pd->ndport = ICMP6_ECHO_REQUEST;
-			else if (pd->ndport == ICMP_ECHOREPLY)
-				pd->ndport = ICMP6_ECHO_REPLY;
-			HTONS(pd->ndport);
-		} else {
-			NTOHS(pd->nsport);
-			if (pd->nsport == ICMP_ECHO)
-				pd->nsport = ICMP6_ECHO_REQUEST;
-			else if (pd->nsport == ICMP_ECHOREPLY)
-				pd->nsport = ICMP6_ECHO_REPLY;
-			HTONS(pd->nsport);
-		}
+		pd->nsport = ntohs(pd->nsport);
+		if (pd->ndport == ICMP_ECHO)
+			pd->ndport = ICMP6_ECHO_REQUEST;
+		else if (pd->ndport == ICMP_ECHOREPLY)
+			pd->ndport = ICMP6_ECHO_REPLY;
+		pd->nsport = htons(pd->nsport);
 	}
 
 	/* get the destination address and port */
