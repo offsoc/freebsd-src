@@ -103,13 +103,14 @@ SUBDIR=	\
 	dummymbuf \
 	dummynet \
 	${_dwwdt} \
-	${_e6000sw} \
+	e6000sw \
 	${_efirt} \
 	${_em} \
 	${_ena} \
 	${_enic} \
 	${_enetc} \
 	${_et} \
+	etherswitch \
 	evdev \
 	${_exca} \
 	ext2fs \
@@ -196,7 +197,6 @@ SUBDIR=	\
 	${_iwi} \
 	${_iwifw} \
 	${_iwlwifi} \
-	${_iwlwififw} \
 	${_iwm} \
 	${_iwn} \
 	${_iwnfw} \
@@ -253,6 +253,7 @@ SUBDIR=	\
 	mem \
 	mfi \
 	mii \
+	miiproxy \
 	mlx \
 	mlxfw \
 	${_mlx4} \
@@ -571,9 +572,6 @@ _mlx5ib=	mlx5ib
 _ena=		ena
 _gve=		gve
 _iwlwifi=	iwlwifi
-.if ${MK_SOURCELESS_UCODE} != "no"
-_iwlwififw=	iwlwififw
-.endif
 _rtw88=		rtw88
 _rtw89=		rtw89
 _vmware=	vmware
@@ -717,7 +715,6 @@ _rockchip=	rockchip
 .if !empty(OPT_FDT)
 _sdhci_fdt=	sdhci_fdt
 .endif
-_e6000sw=	e6000sw
 _neta=		neta
 .endif
 
