@@ -547,19 +547,15 @@ lkpi_sta_sync_vht_from_ni(struct ieee80211_vif *vif, struct ieee80211_sta *sta,
 
 	width = (sta->deflink.vht_cap.cap & IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_MASK);
 	switch (width) {
-#if 0
 	case IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_160MHZ:
 	case IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ:
 		sta->deflink.bandwidth = IEEE80211_STA_RX_BW_160;
 		break;
-#endif
 	default:
 		/* Check if we do support 160Mhz somehow after all. */
-#if 0
 		if ((sta->deflink.vht_cap.cap & IEEE80211_VHT_CAP_EXT_NSS_BW_MASK) != 0)
 			sta->deflink.bandwidth = IEEE80211_STA_RX_BW_160;
 		else
-#endif
 			sta->deflink.bandwidth = IEEE80211_STA_RX_BW_80;
 	}
 skip_bw:
@@ -2021,6 +2017,7 @@ lkpi_sta_scan_to_auth(struct ieee80211vap *vap, enum ieee80211_state nstate, int
 	struct ieee80211_prep_tx_info prep_tx_info;
 	uint32_t changed;
 	int error;
+	bool synched;
 
 	/*
 	 * In here we use vap->iv_bss until lvif->lvif_bss is set.
@@ -2111,14 +2108,11 @@ lkpi_sta_scan_to_auth(struct ieee80211vap *vap, enum ieee80211_state nstate, int
 #endif
 #ifdef LKPI_80211_VHT
 	if (IEEE80211_IS_CHAN_VHT_5GHZ(ni->ni_chan)) {
-#ifdef __notyet__
 		if (IEEE80211_IS_CHAN_VHT80P80(ni->ni_chan))
 			chanctx_conf->def.width = NL80211_CHAN_WIDTH_80P80;
 		else if (IEEE80211_IS_CHAN_VHT160(ni->ni_chan))
 			chanctx_conf->def.width = NL80211_CHAN_WIDTH_160;
-		else
-#endif
-		if (IEEE80211_IS_CHAN_VHT80(ni->ni_chan))
+		else if (IEEE80211_IS_CHAN_VHT80(ni->ni_chan))
 			chanctx_conf->def.width = NL80211_CHAN_WIDTH_80;
 	}
 #endif
@@ -2211,14 +2205,6 @@ lkpi_sta_scan_to_auth(struct ieee80211vap *vap, enum ieee80211_state nstate, int
 	    __func__, ni, ni->ni_drv_data));
 	lsta = ni->ni_drv_data;
 
-	/*
-	 * Make sure in case the sta did not change and we re-add it,
-	 * that we can tx again.
-	 */
-	LKPI_80211_LSTA_TXQ_LOCK(lsta);
-	lsta->txq_ready = true;
-	LKPI_80211_LSTA_TXQ_UNLOCK(lsta);
-
 	/* Insert the [l]sta into the list of known stations. */
 	list_add_tail(&lsta->lsta_list, &lvif->lsta_list);
 
@@ -2292,10 +2278,10 @@ lkpi_sta_scan_to_auth(struct ieee80211vap *vap, enum ieee80211_state nstate, int
 	ieee80211_ref_node(lsta->ni);
 	lvif->lvif_bss = lsta;
 	if (lsta->ni == vap->iv_bss) {
-		lvif->lvif_bss_synched = true;
+		lvif->lvif_bss_synched = synched = true;
 	} else {
 		/* Set to un-synched no matter what. */
-		lvif->lvif_bss_synched = false;
+		lvif->lvif_bss_synched = synched = false;
 		/*
 		 * We do not error as someone has to take us down.
 		 * If we are followed by a 2nd, new net80211::join1() going to
@@ -2305,9 +2291,20 @@ lkpi_sta_scan_to_auth(struct ieee80211vap *vap, enum ieee80211_state nstate, int
 		 * to net80211 as we never used the node beyond alloc()/free()
 		 * and we do not hold an extra reference for that anymore given
 		 * ni : lsta == 1:1.
+		 * Problem is if we do not error a MGMT/AUTH frame will be
+		 * sent from net80211::sta_newstate(); disable lsta queue below.
 		 */
 	}
 	LKPI_80211_LVIF_UNLOCK(lvif);
+	/*
+	 * Make sure in case the sta did not change and we re-added it,
+	 * that we can tx again but only if the vif/iv_bss are in sync.
+	 * Otherwise this should prevent the MGMT/AUTH frame from being
+	 * sent triggering a warning in iwlwifi.
+	 */
+	LKPI_80211_LSTA_TXQ_LOCK(lsta);
+	lsta->txq_ready = synched;
+	LKPI_80211_LSTA_TXQ_UNLOCK(lsta);
 	goto out_relocked;
 
 out:

@@ -504,10 +504,10 @@ SYSCTL_BOOL(_net_link_bridge, OID_AUTO, log_mac_flap,
     "Log MAC address port flapping");
 
 /* allow IP addresses on bridge members */
-VNET_DEFINE_STATIC(bool, member_ifaddrs) = true;
+VNET_DEFINE_STATIC(bool, member_ifaddrs) = false;
 #define	V_member_ifaddrs	VNET(member_ifaddrs)
 SYSCTL_BOOL(_net_link_bridge, OID_AUTO, member_ifaddrs,
-    CTLFLAG_RW | CTLFLAG_VNET, &VNET_NAME(member_ifaddrs), true,
+    CTLFLAG_RW | CTLFLAG_VNET, &VNET_NAME(member_ifaddrs), false,
     "Allow layer 3 addresses on bridge members");
 
 static bool
@@ -1329,25 +1329,6 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 		return (EINVAL);
 	}
 
-	/*
-	 * If member_ifaddrs is disabled, do not allow an interface with
-	 * assigned IP addresses to be added to a bridge.
-	 */
-	if (!V_member_ifaddrs) {
-		struct ifaddr *ifa;
-
-		CK_STAILQ_FOREACH(ifa, &ifs->if_addrhead, ifa_link) {
-#ifdef INET
-			if (ifa->ifa_addr->sa_family == AF_INET)
-				return (EINVAL);
-#endif
-#ifdef INET6
-			if (ifa->ifa_addr->sa_family == AF_INET6)
-				return (EINVAL);
-#endif
-		}
-	}
-
 #ifdef INET6
 	/*
 	 * Two valid inet6 addresses with link-local scope must not be
@@ -1386,6 +1367,26 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 		}
 	}
 #endif
+
+	/*
+	 * If member_ifaddrs is disabled, do not allow an interface with
+	 * assigned IP addresses to be added to a bridge.
+	 */
+	if (!V_member_ifaddrs) {
+		struct ifaddr *ifa;
+
+		CK_STAILQ_FOREACH(ifa, &ifs->if_addrhead, ifa_link) {
+#ifdef INET
+			if (ifa->ifa_addr->sa_family == AF_INET)
+				return (EINVAL);
+#endif
+#ifdef INET6
+			if (ifa->ifa_addr->sa_family == AF_INET6)
+				return (EINVAL);
+#endif
+		}
+	}
+
 	/* Allow the first Ethernet member to define the MTU */
 	if (CK_LIST_EMPTY(&sc->sc_iflist))
 		sc->sc_ifp->if_mtu = ifs->if_mtu;
