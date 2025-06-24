@@ -114,8 +114,6 @@ struct vm_domain vm_dom[MAXMEMDOM];
 
 DPCPU_DEFINE_STATIC(struct vm_batchqueue, pqbatch[MAXMEMDOM][PQ_COUNT]);
 
-struct mtx_padalign __exclusive_cache_line pa_lock[PA_LOCK_COUNT];
-
 struct mtx_padalign __exclusive_cache_line vm_domainset_lock;
 /* The following fields are protected by the domainset lock. */
 domainset_t __exclusive_cache_line vm_min_domains;
@@ -141,6 +139,11 @@ static COUNTER_U64_DEFINE_EARLY(queue_nops);
 SYSCTL_COUNTER_U64(_vm_stats_page, OID_AUTO, queue_nops,
     CTLFLAG_RD, &queue_nops,
     "Number of batched queue operations with no effects");
+
+static unsigned long nofreeq_size;
+SYSCTL_ULONG(_vm_stats_page, OID_AUTO, nofreeq_size, CTLFLAG_RD,
+    &nofreeq_size, 0,
+    "Size of the nofree queue");
 
 /*
  * bogus page -- for I/O to/from partially complete buffers,
@@ -586,8 +589,6 @@ vm_page_startup(vm_offset_t vaddr)
 	 * Initialize the page and queue locks.
 	 */
 	mtx_init(&vm_domainset_lock, "vm domainset lock", NULL, MTX_DEF);
-	for (i = 0; i < PA_LOCK_COUNT; i++)
-		mtx_init(&pa_lock[i], "vm page", NULL, MTX_DEF);
 	for (i = 0; i < vm_ndomains; i++)
 		vm_page_domain_init(i);
 
@@ -2326,9 +2327,6 @@ vm_page_alloc_contig_domain(vm_object_t object, vm_pindex_t pindex, int domain,
 	KASSERT(((req & (VM_ALLOC_NOBUSY | VM_ALLOC_SBUSY)) !=
 	    (VM_ALLOC_NOBUSY | VM_ALLOC_SBUSY)),
 	    ("invalid request %#x", req));
-	KASSERT((req & (VM_ALLOC_WAITOK | VM_ALLOC_NORECLAIM)) !=
-	    (VM_ALLOC_WAITOK | VM_ALLOC_NORECLAIM),
-	    ("invalid request %#x", req));
 	VM_OBJECT_ASSERT_WLOCKED(object);
 	KASSERT((object->flags & OBJ_FICTITIOUS) == 0,
 	    ("vm_page_alloc_contig: object %p has fictitious pages",
@@ -2544,7 +2542,7 @@ vm_page_alloc_nofree_domain(int domain, int req)
 		}
 		m->ref_count = count - 1;
 		TAILQ_INSERT_HEAD(&vmd->vmd_nofreeq, m, plinks.q);
-		VM_CNT_ADD(v_nofree_count, count);
+		atomic_add_long(&nofreeq_size, count);
 	}
 	m = TAILQ_FIRST(&vmd->vmd_nofreeq);
 	TAILQ_REMOVE(&vmd->vmd_nofreeq, m, plinks.q);
@@ -2558,7 +2556,8 @@ vm_page_alloc_nofree_domain(int domain, int req)
 		m->ref_count = 0;
 	}
 	vm_domain_free_unlock(vmd);
-	VM_CNT_ADD(v_nofree_count, -1);
+	atomic_add_long(&nofreeq_size, -1);
+	VM_CNT_INC(v_nofree_count);
 
 	return (m);
 }
@@ -2572,11 +2571,12 @@ vm_page_alloc_nofree_domain(int domain, int req)
 static void __noinline
 vm_page_free_nofree(struct vm_domain *vmd, vm_page_t m)
 {
+	VM_CNT_ADD(v_nofree_count, -1);
+	atomic_add_long(&nofreeq_size, 1);
 	vm_domain_free_lock(vmd);
 	MPASS(m->ref_count == 0);
 	TAILQ_INSERT_HEAD(&vmd->vmd_nofreeq, m, plinks.q);
 	vm_domain_free_unlock(vmd);
-	VM_CNT_ADD(v_nofree_count, 1);
 }
 
 vm_page_t
@@ -5808,43 +5808,6 @@ vm_page_valid(vm_page_t m)
 	else
 		vm_page_bits_set(m, &m->valid, VM_PAGE_BITS_ALL);
 }
-
-void
-vm_page_lock_KBI(vm_page_t m, const char *file, int line)
-{
-
-	mtx_lock_flags_(vm_page_lockptr(m), 0, file, line);
-}
-
-void
-vm_page_unlock_KBI(vm_page_t m, const char *file, int line)
-{
-
-	mtx_unlock_flags_(vm_page_lockptr(m), 0, file, line);
-}
-
-int
-vm_page_trylock_KBI(vm_page_t m, const char *file, int line)
-{
-
-	return (mtx_trylock_flags_(vm_page_lockptr(m), 0, file, line));
-}
-
-#if defined(INVARIANTS) || defined(INVARIANT_SUPPORT)
-void
-vm_page_assert_locked_KBI(vm_page_t m, const char *file, int line)
-{
-
-	vm_page_lock_assert_KBI(m, MA_OWNED, file, line);
-}
-
-void
-vm_page_lock_assert_KBI(vm_page_t m, int a, const char *file, int line)
-{
-
-	mtx_assert_(vm_page_lockptr(m), a, file, line);
-}
-#endif
 
 #ifdef INVARIANTS
 void
