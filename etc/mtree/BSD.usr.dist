@@ -30,6 +30,8 @@
             ..
             ucl
             ..
+            yaml
+            ..
             zstd
             ..
         ..
@@ -265,8 +267,6 @@
         ..
         dtrace
         ..
-        et
-        ..
         examples
             BSD_daemon
             ..
@@ -301,6 +301,8 @@
             hostapd
             ..
             indent
+            ..
+            inotify
             ..
             ipfilter
             ..

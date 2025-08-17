@@ -122,7 +122,7 @@ pfr_add_addrs(struct pfr_table *tbl, struct pfr_addr *addr, int size,
 {
 	int ret;
 
-	ret = pfctl_table_add_addrs(dev, tbl, addr, size, nadd, flags);
+	ret = pfctl_table_add_addrs_h(pfh, tbl, addr, size, nadd, flags);
 	if (ret) {
 		errno = ret;
 		return (-1);
@@ -136,7 +136,7 @@ pfr_del_addrs(struct pfr_table *tbl, struct pfr_addr *addr, int size,
 {
 	int ret;
 
-	ret = pfctl_table_del_addrs(dev, tbl, addr, size, ndel, flags);
+	ret = pfctl_table_del_addrs_h(pfh, tbl, addr, size, ndel, flags);
 	if (ret) {
 		errno = ret;
 		return (-1);
@@ -460,17 +460,4 @@ pfr_next_token(char buf[BUF_SIZE], FILE *fp)
 	}
 	buf[i] = '\0';
 	return (1);
-}
-
-char *
-pfr_strerror(int errnum)
-{
-	switch (errnum) {
-	case ESRCH:
-		return "Table does not exist";
-	case ENOENT:
-		return "Anchor or Ruleset does not exist";
-	default:
-		return strerror(errnum);
-	}
 }

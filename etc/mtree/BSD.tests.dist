@@ -513,6 +513,8 @@
         ..
         savecore
         ..
+        swapon
+        ..
         sysctl
         ..
     ..
@@ -1202,6 +1204,8 @@
             ..
         ..
         seq
+        ..
+        sockstat
         ..
         soelim
         ..

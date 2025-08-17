@@ -34,6 +34,7 @@ SUBDIR=	\
 	alq \
 	${_amd_ecc_inject} \
 	${_amdgpio} \
+	${_amdsmu} \
 	${_amdsbwd} \
 	${_amdsmn} \
 	${_amdtemp} \
@@ -141,6 +142,7 @@ SUBDIR=	\
 	${_hptnr} \
 	${_hptrr} \
 	hwpmc \
+	${_hwt} \
 	${_hyperv} \
 	i2c \
 	${_iavf} \
@@ -325,6 +327,7 @@ SUBDIR=	\
 	proto \
 	pseudofs \
 	${_pst} \
+	${_pt} \
 	pty  \
 	puc \
 	pwm \
@@ -713,7 +716,8 @@ _rockchip=	rockchip
 .endif
 .endif
 
-.if ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "arm"
+.if ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "arm" || \
+    ${MACHINE_CPUARCH} == "riscv"
 .if !empty(OPT_FDT)
 _sdhci_fdt=	sdhci_fdt
 .endif
@@ -770,6 +774,7 @@ _acpi=		acpi
 _aesni=		aesni
 .endif
 _amd_ecc_inject=amd_ecc_inject
+_amdsmu=	amdsmu
 _amdsbwd=	amdsbwd
 _amdsmn=	amdsmn
 _amdtemp=	amdtemp
@@ -841,6 +846,7 @@ _iwx=		iwx
 _ixl=		ixl
 _nvdimm=	nvdimm
 _pms=		pms
+_pt=		pt
 _qat=		qat
 .if ${MK_SOURCELESS_UCODE} != "no"
 _qatfw=		qatfw
@@ -857,6 +863,10 @@ _sgx=		sgx
 _sgx_linux=	sgx_linux
 _smartpqi=	smartpqi
 _p2sb=		p2sb
+.endif
+
+.if ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "amd64"
+_hwt=		hwt
 .endif
 
 .if ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "amd64" || \

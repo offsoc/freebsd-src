@@ -362,12 +362,6 @@ rk_gpio_attach(device_t dev)
 		return (ENXIO);
 	}
 
-	sc->sc_busdev = gpiobus_attach_bus(dev);
-	if (sc->sc_busdev == NULL) {
-		rk_gpio_detach(dev);
-		return (ENXIO);
-	}
-
 	/* Set the cached value to unknown */
 	for (i = 0; i < RK_GPIO_MAX_PINS; i++)
 		sc->pin_cached[i].is_gpio = 2;
@@ -377,6 +371,13 @@ rk_gpio_attach(device_t dev)
 	sc->swporta_ddr = rk_gpio_read_4(sc, RK_GPIO_SWPORTA_DDR);
 	RK_GPIO_UNLOCK(sc);
 
+	sc->sc_busdev = gpiobus_add_bus(dev);
+	if (sc->sc_busdev == NULL) {
+		rk_gpio_detach(dev);
+		return (ENXIO);
+	}
+
+	bus_attach_children(dev);
 	return (0);
 }
 

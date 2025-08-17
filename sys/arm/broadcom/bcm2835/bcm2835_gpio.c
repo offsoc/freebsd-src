@@ -837,13 +837,14 @@ bcm_gpio_attach(device_t dev)
 	}
 	sc->sc_gpio_npins = i;
 	bcm_gpio_sysctl_init(sc);
-	sc->sc_busdev = gpiobus_attach_bus(dev);
-	if (sc->sc_busdev == NULL)
-		goto fail;
 
 	fdt_pinctrl_register(dev, "brcm,pins");
 	fdt_pinctrl_configure_tree(dev);
+	sc->sc_busdev = gpiobus_add_bus(dev);
+	if (sc->sc_busdev == NULL)
+		goto fail;
 
+	bus_attach_children(dev);
 	return (0);
 
 fail:

@@ -110,8 +110,6 @@
 
 #include <netpfil/pf/pfsync_nv.h>
 
-#define	DPFPRINTF(n, x)	if (V_pf_status.debug >= (n)) printf x
-
 struct pfsync_bucket;
 struct pfsync_softc;
 
@@ -397,23 +395,6 @@ pfsync_clone_create(struct if_clone *ifc, int unit, caddr_t param)
 	sc->sc_flags |= PFSYNCF_OK;
 	sc->sc_maxupdates = 128;
 	sc->sc_version = PFSYNC_MSG_VERSION_DEFAULT;
-
-	ifp = sc->sc_ifp = if_alloc(IFT_PFSYNC);
-	if_initname(ifp, pfsyncname, unit);
-	ifp->if_softc = sc;
-	ifp->if_ioctl = pfsyncioctl;
-	ifp->if_output = pfsyncoutput;
-	ifp->if_hdrlen = sizeof(struct pfsync_header);
-	ifp->if_mtu = ETHERMTU;
-	mtx_init(&sc->sc_mtx, pfsyncname, NULL, MTX_DEF);
-	mtx_init(&sc->sc_bulk_mtx, "pfsync bulk", NULL, MTX_DEF);
-	callout_init_mtx(&sc->sc_bulk_tmo, &sc->sc_bulk_mtx, 0);
-	callout_init_mtx(&sc->sc_bulkfail_tmo, &sc->sc_bulk_mtx, 0);
-
-	if_attach(ifp);
-
-	bpfattach(ifp, DLT_PFSYNC, PFSYNC_HDRLEN);
-
 	sc->sc_buckets = mallocarray(pfsync_buckets, sizeof(*sc->sc_buckets),
 	    M_PFSYNC, M_ZERO | M_WAITOK);
 	for (c = 0; c < pfsync_buckets; c++) {
@@ -434,6 +415,22 @@ pfsync_clone_create(struct if_clone *ifc, int unit, caddr_t param)
 
 		b->b_snd.ifq_maxlen = ifqmaxlen;
 	}
+
+	ifp = sc->sc_ifp = if_alloc(IFT_PFSYNC);
+	if_initname(ifp, pfsyncname, unit);
+	ifp->if_softc = sc;
+	ifp->if_ioctl = pfsyncioctl;
+	ifp->if_output = pfsyncoutput;
+	ifp->if_hdrlen = sizeof(struct pfsync_header);
+	ifp->if_mtu = ETHERMTU;
+	mtx_init(&sc->sc_mtx, pfsyncname, NULL, MTX_DEF);
+	mtx_init(&sc->sc_bulk_mtx, "pfsync bulk", NULL, MTX_DEF);
+	callout_init_mtx(&sc->sc_bulk_tmo, &sc->sc_bulk_mtx, 0);
+	callout_init_mtx(&sc->sc_bulkfail_tmo, &sc->sc_bulk_mtx, 0);
+
+	if_attach(ifp);
+
+	bpfattach(ifp, DLT_PFSYNC, PFSYNC_HDRLEN);
 
 	V_pfsyncif = sc;
 
@@ -494,6 +491,10 @@ pfsync_clone_destroy(struct ifnet *ifp)
 	mtx_destroy(&sc->sc_mtx);
 	mtx_destroy(&sc->sc_bulk_mtx);
 
+	for (c = 0; c < pfsync_buckets; c++) {
+		b = &sc->sc_buckets[c];
+		mtx_destroy(&b->b_mtx);
+	}
 	free(sc->sc_buckets, M_PFSYNC);
 	free(sc, M_PFSYNC);
 
@@ -528,7 +529,9 @@ pfsync_state_import(union pfsync_state_union *sp, int flags, int msg_version)
 	struct pfi_kkif		*rt_kif = NULL;
 	struct pf_kpooladdr	*rpool_first;
 	int			 error;
+	sa_family_t		 rt_af = 0;
 	uint8_t			 rt = 0;
+	int			 n = 0;
 
 	PF_RULES_RASSERT();
 
@@ -554,10 +557,12 @@ pfsync_state_import(union pfsync_state_union *sp, int flags, int msg_version)
 	 */
 	if (sp->pfs_1301.rule != htonl(-1) && sp->pfs_1301.anchor == htonl(-1) &&
 	    (flags & (PFSYNC_SI_IOCTL | PFSYNC_SI_CKSUM)) && ntohl(sp->pfs_1301.rule) <
-	    pf_main_ruleset.rules[PF_RULESET_FILTER].active.rcount)
-		r = pf_main_ruleset.rules[
-		    PF_RULESET_FILTER].active.ptr_array[ntohl(sp->pfs_1301.rule)];
-	else
+	    pf_main_ruleset.rules[PF_RULESET_FILTER].active.rcount) {
+		TAILQ_FOREACH(r, pf_main_ruleset.rules[
+		    PF_RULESET_FILTER].active.ptr, entries)
+			if (ntohl(sp->pfs_1301.rule) == n++)
+				break;
+	} else
 		r = &V_pf_default_rule;
 
 	/*
@@ -591,21 +596,26 @@ pfsync_state_import(union pfsync_state_union *sp, int flags, int msg_version)
 			if ((rpool_first == NULL) ||
 			    (TAILQ_NEXT(rpool_first, entries) != NULL)) {
 				DPFPRINTF(PF_DEBUG_MISC,
-				    ("%s: can't recover routing information "
-				    "because of empty or bad redirection pool\n",
-				    __func__));
+				    "%s: can't recover routing information "
+				    "because of empty or bad redirection pool",
+				    __func__);
 				return ((flags & PFSYNC_SI_IOCTL) ? EINVAL : 0);
 			}
 			rt = r->rt;
 			rt_kif = rpool_first->kif;
+			/*
+			 * Guess the AF of the route address, FreeBSD 13 does
+			 * not support af-to so it should be safe.
+			 */
+			rt_af = r->af;
 		} else if (!PF_AZERO(&sp->pfs_1301.rt_addr, sp->pfs_1301.af)) {
 			/*
 			 * Ruleset different, routing *supposedly* requested,
 			 * give up on recovering.
 			 */
 			DPFPRINTF(PF_DEBUG_MISC,
-			    ("%s: can't recover routing information "
-			    "because of different ruleset\n", __func__));
+			    "%s: can't recover routing information "
+			    "because of different ruleset", __func__);
 			return ((flags & PFSYNC_SI_IOCTL) ? EINVAL : 0);
 		}
 	break;
@@ -618,11 +628,16 @@ pfsync_state_import(union pfsync_state_union *sp, int flags, int msg_version)
 			rt_kif = pfi_kkif_find(sp->pfs_1400.rt_ifname);
 			if (rt_kif == NULL) {
 				DPFPRINTF(PF_DEBUG_MISC,
-				    ("%s: unknown route interface: %s\n",
-				    __func__, sp->pfs_1400.rt_ifname));
+				    "%s: unknown route interface: %s",
+				    __func__, sp->pfs_1400.rt_ifname);
 				return ((flags & PFSYNC_SI_IOCTL) ? EINVAL : 0);
 			}
 			rt = sp->pfs_1400.rt;
+			/*
+			 * Guess the AF of the route address, FreeBSD 13 does
+			 * not support af-to so it should be safe.
+			 */
+			rt_af = sp->pfs_1400.af;
 		}
 	break;
 	}
@@ -702,6 +717,7 @@ pfsync_state_import(union pfsync_state_union *sp, int flags, int msg_version)
 
 	st->act.rt = rt;
 	st->act.rt_kif = rt_kif;
+	st->act.rt_af = rt_af;
 
 	switch (msg_version) {
 		case PFSYNC_MSG_VERSION_1301:
@@ -759,6 +775,10 @@ pfsync_state_import(union pfsync_state_union *sp, int flags, int msg_version)
 			panic("%s: Unsupported pfsync_msg_version %d",
 			    __func__, msg_version);
 	}
+
+	if (! (st->act.rtableid == -1 ||
+	    (st->act.rtableid >= 0 && st->act.rtableid < rt_numfibs)))
+		goto cleanup;
 
 	st->id = sp->pfs_1301.id;
 	st->creatorid = sp->pfs_1301.creatorid;
@@ -1080,7 +1100,7 @@ pfsync_in_ins(struct mbuf *m, int offset, int count, int flags, int action)
 			msg_version = PFSYNC_MSG_VERSION_1400;
 			break;
 		default:
-			V_pfsyncstats.pfsyncs_badact++;
+			V_pfsyncstats.pfsyncs_badver++;
 			return (-1);
 	}
 
@@ -1107,9 +1127,8 @@ pfsync_in_ins(struct mbuf *m, int offset, int count, int flags, int action)
 			continue;
 		}
 
-		if (pfsync_state_import(sp, flags, msg_version) == ENOMEM)
-			/* Drop out, but process the rest of the actions. */
-			break;
+		if (pfsync_state_import(sp, flags, msg_version) != 0)
+			V_pfsyncstats.pfsyncs_badact++;
 	}
 
 	return (total_len);

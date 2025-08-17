@@ -609,7 +609,6 @@ tcp_input_with_port(struct mbuf **mp, int *offp, int proto, uint16_t port)
 	int tlen = 0, off;
 	int drop_hdrlen;
 	int thflags;
-	int rstreason = 0;	/* For badport_bandlim accounting purposes */
 	int lookupflag;
 	uint8_t iptos;
 	struct m_tag *fwd_tag = NULL;
@@ -621,6 +620,7 @@ tcp_input_with_port(struct mbuf **mp, int *offp, int proto, uint16_t port)
 #endif /* INET6 */
 	struct tcpopt to;		/* options in this segment */
 	char *s = NULL;			/* address and port logging */
+	bool closed_port = false;	/* segment is hitting a closed port */
 
 	NET_EPOCH_ASSERT();
 
@@ -649,6 +649,12 @@ tcp_input_with_port(struct mbuf **mp, int *offp, int proto, uint16_t port)
 				th->th_sum = in6_cksum_pseudo(ip6, tlen,
 				    IPPROTO_TCP, m->m_pkthdr.csum_data);
 			th->th_sum ^= 0xffff;
+		} else if (m->m_pkthdr.csum_flags & CSUM_IP6_TCP) {
+			/*
+			 * Packet from local host (maybe from a VM).
+			 * Checksum not required.
+			 */
+			th->th_sum = 0;
 		} else
 			th->th_sum = in6_cksum(m, IPPROTO_TCP, off0, tlen);
 		if (th->th_sum) {
@@ -709,6 +715,12 @@ tcp_input_with_port(struct mbuf **mp, int *offp, int proto, uint16_t port)
 				    htonl(m->m_pkthdr.csum_data + tlen +
 				    IPPROTO_TCP));
 			th->th_sum ^= 0xffff;
+		} else if (m->m_pkthdr.csum_flags & CSUM_IP_TCP) {
+			/*
+			 * Packet from local host (maybe from a VM).
+			 * Checksum not required.
+			 */
+			th->th_sum = 0;
 		} else {
 			struct ipovly *ipov = (struct ipovly *)ip;
 
@@ -892,22 +904,22 @@ findpcb:
 	 * XXX MRT Send RST using which routing table?
 	 */
 	if (inp == NULL) {
-		if (rstreason != 0) {
+		if ((lookupflag & INPLOOKUP_WILDCARD) == 0) {
 			/* We came here after second (safety) lookup. */
-			MPASS((lookupflag & INPLOOKUP_WILDCARD) == 0);
-			goto dropwithreset;
-		}
-		/*
-		 * Log communication attempts to ports that are not
-		 * in use.
-		 */
-		if ((V_tcp_log_in_vain == 1 && (thflags & TH_SYN)) ||
-		    V_tcp_log_in_vain == 2) {
-			if ((s = tcp_log_vain(NULL, th, (void *)ip, ip6)))
+			MPASS(!closed_port);
+		} else {
+			/*
+			 * Log communication attempts to ports that are not
+			 * in use.
+			 */
+			if (((V_tcp_log_in_vain == 1 && (thflags & TH_SYN)) ||
+			     V_tcp_log_in_vain == 2) &&
+			    (s = tcp_log_vain(NULL, th, (void *)ip, ip6))) {
 				log(LOG_INFO, "%s; %s: Connection attempt "
 				    "to closed port\n", s, __func__);
+			}
+			closed_port = true;
 		}
-		rstreason = BANDLIM_RST_CLOSEDPORT;
 		goto dropwithreset;
 	}
 	INP_LOCK_ASSERT(inp);
@@ -998,12 +1010,12 @@ findpcb:
 		 * down or it is in the CLOSED state.  Either way we drop the
 		 * segment and send an appropriate response.
 		 */
-		rstreason = BANDLIM_RST_CLOSEDPORT;
+		closed_port = true;
 		goto dropwithreset;
 	}
 
 	if ((tp->t_port != port) && (tp->t_state > TCPS_LISTEN)) {
-		rstreason = BANDLIM_RST_CLOSEDPORT;
+		closed_port = true;
 		goto dropwithreset;
 	}
 
@@ -1055,6 +1067,8 @@ findpcb:
 		 * socket appended to the listen queue in SYN_RECEIVED state.
 		 */
 		if ((thflags & (TH_RST|TH_ACK|TH_SYN)) == TH_ACK) {
+			int result;
+
 			/*
 			 * Parse the TCP options here because
 			 * syncookies need access to the reflected
@@ -1064,8 +1078,8 @@ findpcb:
 			/*
 			 * NB: syncache_expand() doesn't unlock inp.
 			 */
-			rstreason = syncache_expand(&inc, &to, th, &so, m, port);
-			if (rstreason < 0) {
+			result = syncache_expand(&inc, &to, th, &so, m, port);
+			if (result < 0) {
 				/*
 				 * A failing TCP MD5 signature comparison
 				 * must result in the segment being dropped
@@ -1073,7 +1087,7 @@ findpcb:
 				 * to the sender.
 				 */
 				goto dropunlock;
-			} else if (rstreason == 0) {
+			} else if (result == 0) {
 				/*
 				 * No syncache entry, or ACK was not for our
 				 * SYN/ACK.  Do our protection against double
@@ -1084,7 +1098,8 @@ findpcb:
 				 * don't want to sent RST for the second ACK,
 				 * so we perform second lookup without wildcard
 				 * match, hoping to find the new socket.  If
-				 * the ACK is stray indeed, rstreason would
+				 * the ACK is stray indeed, the missing
+				 * INPLOOKUP_WILDCARD flag in lookupflag would
 				 * hint the above code that the lookup was a
 				 * second attempt.
 				 *
@@ -1092,7 +1107,6 @@ findpcb:
 				 * of the failure cause.
 				 */
 				INP_WUNLOCK(inp);
-				rstreason = BANDLIM_RST_OPENPORT;
 				lookupflag &= ~INPLOOKUP_WILDCARD;
 				goto findpcb;
 			}
@@ -1116,7 +1130,6 @@ tfo_socket_result:
 					    V_tcp_sc_rst_sock_fail ?
 					    "sending RST" : "try again");
 				if (V_tcp_sc_rst_sock_fail) {
-					rstreason = BANDLIM_UNLIMITED;
 					goto dropwithreset;
 				} else
 					goto dropunlock;
@@ -1183,7 +1196,6 @@ tfo_socket_result:
 				    s, __func__);
 			syncache_badack(&inc, port);	/* XXX: Not needed! */
 			TCPSTAT_INC(tcps_badsyn);
-			rstreason = BANDLIM_RST_OPENPORT;
 			goto dropwithreset;
 		}
 		/*
@@ -1259,7 +1271,6 @@ tfo_socket_result:
 					"Connection attempt to deprecated "
 					"IPv6 address rejected\n",
 					s, __func__);
-				rstreason = BANDLIM_RST_OPENPORT;
 				goto dropwithreset;
 			}
 		}
@@ -1380,9 +1391,9 @@ dropwithreset:
 	 * When blackholing do not respond with a RST but
 	 * completely ignore the segment and drop it.
 	 */
-	if (((rstreason == BANDLIM_RST_OPENPORT && V_blackhole == 3) ||
-	    (rstreason == BANDLIM_RST_CLOSEDPORT &&
-	    ((V_blackhole == 1 && (thflags & TH_SYN)) || V_blackhole > 1))) &&
+	if (((!closed_port && V_blackhole == 3) ||
+	     (closed_port &&
+	      ((V_blackhole == 1 && (thflags & TH_SYN)) || V_blackhole > 1))) &&
 	    (V_blackhole_local || (
 #ifdef INET6
 	    isipv6 ? !in6_localip(&ip6->ip6_src) :
@@ -1395,7 +1406,7 @@ dropwithreset:
 	    )))
 		goto dropunlock;
 	TCP_PROBE5(receive, NULL, tp, m, tp, th);
-	tcp_dropwithreset(m, th, tp, tlen, rstreason);
+	tcp_dropwithreset(m, th, tp, tlen);
 	m = NULL;	/* mbuf chain got consumed. */
 
 dropunlock:
@@ -1504,7 +1515,7 @@ tcp_do_segment(struct tcpcb *tp, struct mbuf *m, struct tcphdr *th,
 	uint16_t thflags;
 	int acked, ourfinisacked, needoutput = 0;
 	sackstatus_t sack_changed;
-	int rstreason, todrop, win, incforsyn = 0;
+	int todrop, win, incforsyn = 0;
 	uint32_t tiwin;
 	uint16_t nsegs;
 	char *s;
@@ -1515,7 +1526,9 @@ tcp_do_segment(struct tcpcb *tp, struct mbuf *m, struct tcphdr *th,
 	struct tcpopt to;
 	int tfo_syn;
 	u_int maxseg = 0;
+	bool no_data;
 
+	no_data = (tlen == 0);
 	thflags = tcp_get_flags(th);
 	tp->sackhint.last_sack_ack = 0;
 	sack_changed = SACK_NOCHANGE;
@@ -1547,7 +1560,6 @@ tcp_do_segment(struct tcpcb *tp, struct mbuf *m, struct tcphdr *th,
 	 */
 	if ((tp->t_state == TCPS_SYN_SENT) && (thflags & TH_ACK) &&
 	    (SEQ_LEQ(th->th_ack, tp->iss) || SEQ_GT(th->th_ack, tp->snd_max))) {
-		rstreason = BANDLIM_UNLIMITED;
 		tcp_log_end_status(tp, TCP_EI_STATUS_RST_IN_FRONT);
 		goto dropwithreset;
 	}
@@ -1754,7 +1766,7 @@ tcp_do_segment(struct tcpcb *tp, struct mbuf *m, struct tcphdr *th,
 			tp->ts_recent = to.to_tsval;
 		}
 
-		if (tlen == 0) {
+		if (no_data) {
 			if (SEQ_GT(th->th_ack, tp->snd_una) &&
 			    SEQ_LEQ(th->th_ack, tp->snd_max) &&
 			    !IN_RECOVERY(tp->t_flags) &&
@@ -1963,7 +1975,6 @@ tcp_do_segment(struct tcpcb *tp, struct mbuf *m, struct tcphdr *th,
 		if ((thflags & TH_ACK) &&
 		    (SEQ_LEQ(th->th_ack, tp->snd_una) ||
 		     SEQ_GT(th->th_ack, tp->snd_max))) {
-				rstreason = BANDLIM_RST_OPENPORT;
 				tcp_log_end_status(tp, TCP_EI_STATUS_RST_IN_FRONT);
 				goto dropwithreset;
 		}
@@ -1976,7 +1987,6 @@ tcp_do_segment(struct tcpcb *tp, struct mbuf *m, struct tcphdr *th,
 			 * FIN, or a RST.
 			 */
 			if ((thflags & (TH_SYN|TH_ACK)) == (TH_SYN|TH_ACK)) {
-				rstreason = BANDLIM_RST_OPENPORT;
 				tcp_log_end_status(tp, TCP_EI_STATUS_RST_IN_FRONT);
 				goto dropwithreset;
 			} else if (thflags & TH_SYN) {
@@ -2197,7 +2207,6 @@ tcp_do_segment(struct tcpcb *tp, struct mbuf *m, struct tcphdr *th,
 		    SEQ_LT(th->th_seq, tp->last_ack_sent + tp->rcv_wnd)) {
 			tcp_log_end_status(tp, TCP_EI_STATUS_RST_IN_FRONT);
 			tp = tcp_drop(tp, ECONNRESET);
-			rstreason = BANDLIM_UNLIMITED;
 		} else {
 			tcp_ecn_input_syn_sent(tp, thflags, iptos);
 			tcp_send_challenge_ack(tp, th, m);
@@ -2244,7 +2253,6 @@ tcp_do_segment(struct tcpcb *tp, struct mbuf *m, struct tcphdr *th,
 	 * for the "LAND" DoS attack.
 	 */
 	if (tp->t_state == TCPS_SYN_RECEIVED && SEQ_LT(th->th_seq, tp->irs)) {
-		rstreason = BANDLIM_RST_OPENPORT;
 		tcp_log_end_status(tp, TCP_EI_STATUS_RST_IN_FRONT);
 		goto dropwithreset;
 	}
@@ -2326,7 +2334,6 @@ tcp_do_segment(struct tcpcb *tp, struct mbuf *m, struct tcphdr *th,
 		tcp_log_end_status(tp, TCP_EI_STATUS_SERVER_RST);
 		tp = tcp_close(tp);
 		TCPSTAT_INC(tcps_rcvafterclose);
-		rstreason = BANDLIM_UNLIMITED;
 		goto dropwithreset;
 	}
 
@@ -2557,7 +2564,7 @@ tcp_do_segment(struct tcpcb *tp, struct mbuf *m, struct tcphdr *th,
 
 		if (SEQ_LEQ(th->th_ack, tp->snd_una)) {
 			maxseg = tcp_maxseg(tp);
-			if (tlen == 0 &&
+			if (no_data &&
 			    (tiwin == tp->snd_wnd ||
 			    (tp->t_flags & TF_SACK_PERMIT))) {
 				/*
@@ -3113,8 +3120,7 @@ step6:
 	    (tp->snd_wl1 == th->th_seq && (SEQ_LT(tp->snd_wl2, th->th_ack) ||
 	     (tp->snd_wl2 == th->th_ack && tiwin > tp->snd_wnd))))) {
 		/* keep track of pure window updates */
-		if (tlen == 0 &&
-		    tp->snd_wl2 == th->th_ack && tiwin > tp->snd_wnd)
+		if (no_data && tp->snd_wl2 == th->th_ack && tiwin > tp->snd_wnd)
 			TCPSTAT_INC(tcps_rcvwinupd);
 		tp->snd_wnd = tiwin;
 		tp->snd_wl1 = th->th_seq;
@@ -3424,7 +3430,6 @@ dropafterack:
 	if (tp->t_state == TCPS_SYN_RECEIVED && (thflags & TH_ACK) &&
 	    (SEQ_GT(tp->snd_una, th->th_ack) ||
 	     SEQ_GT(th->th_ack, tp->snd_max)) ) {
-		rstreason = BANDLIM_RST_OPENPORT;
 		tcp_log_end_status(tp, TCP_EI_STATUS_RST_IN_FRONT);
 		goto dropwithreset;
 	}
@@ -3436,11 +3441,10 @@ dropafterack:
 	return;
 
 dropwithreset:
+	tcp_dropwithreset(m, th, NULL, tlen);
 	if (tp != NULL) {
-		tcp_dropwithreset(m, th, tp, tlen, rstreason);
 		INP_WUNLOCK(inp);
-	} else
-		tcp_dropwithreset(m, th, NULL, tlen, rstreason);
+	}
 	return;
 
 drop:
@@ -3460,8 +3464,7 @@ drop:
  * tp may be NULL.
  */
 void
-tcp_dropwithreset(struct mbuf *m, struct tcphdr *th, struct tcpcb *tp,
-    int tlen, int rstreason)
+tcp_dropwithreset(struct mbuf *m, struct tcphdr *th, struct tcpcb *tp, int tlen)
 {
 #ifdef INET
 	struct ip *ip;
@@ -3501,7 +3504,7 @@ tcp_dropwithreset(struct mbuf *m, struct tcphdr *th, struct tcpcb *tp,
 #endif
 
 	/* Perform bandwidth limiting. */
-	if (badport_bandlim(rstreason) < 0)
+	if (badport_bandlim(BANDLIM_TCP_RST) < 0)
 		goto drop;
 
 	/* tcp_respond consumes the mbuf chain. */

@@ -483,6 +483,9 @@
 /* building against unsupported kernel version */
 /* #undef HAVE_LINUX_EXPERIMENTAL */
 
+/* Define to 1 if you have the <linux/stat.h> header file. */
+/* #undef HAVE_LINUX_STAT_H */
+
 /* makedev() is declared in sys/mkdev.h */
 /* #undef HAVE_MAKEDEV_IN_MKDEV */
 
@@ -509,6 +512,9 @@
 
 /* folio_wait_bit() exists */
 /* #undef HAVE_PAGEMAP_FOLIO_WAIT_BIT */
+
+/* readahead_page() exists */
+/* #undef HAVE_PAGEMAP_READAHEAD_PAGE */
 
 /* part_to_dev() exists */
 /* #undef HAVE_PART_TO_DEV */
@@ -582,6 +588,9 @@
 /* kernel_siginfo_t exists */
 /* #undef HAVE_SIGINFO */
 
+/* sops->free_inode() exists */
+/* #undef HAVE_SOPS_FREE_INODE */
+
 #if defined(__amd64__) || defined(__i386__)
 /* Define if host toolchain supports SSE */
 #define HAVE_SSE 1
@@ -610,6 +619,12 @@
 
 /* standalone <linux/stdarg.h> exists */
 /* #undef HAVE_STANDALONE_LINUX_STDARG */
+
+/* statx() is available */
+/* #undef HAVE_STATX */
+
+/* STATX_MNT_ID is available */
+/* #undef HAVE_STATX_MNT_ID */
 
 /* Define to 1 if you have the <stdint.h> header file. */
 #define HAVE_STDINT_H 1
@@ -722,6 +737,9 @@
 /* splice_copy_file_range() is available */
 /* #undef HAVE_VFS_SPLICE_COPY_FILE_RANGE */
 
+/* address_space_operations->writepage exists */
+/* #undef HAVE_VFS_WRITEPAGE */
+
 /* __vmalloc page flags exists */
 /* #undef HAVE_VMALLOC_PAGE_KERNEL */
 
@@ -812,7 +830,7 @@
 /* #undef ZFS_DEVICE_MINOR */
 
 /* Define the project alias string. */
-#define ZFS_META_ALIAS "zfs-2.3.99-437-FreeBSD_g8170eb6eb"
+#define ZFS_META_ALIAS "zfs-2.3.99-539-FreeBSD_g1d0b94c4e"
 
 /* Define the project author. */
 #define ZFS_META_AUTHOR "OpenZFS"
@@ -842,7 +860,7 @@
 #define ZFS_META_NAME "zfs"
 
 /* Define the project release. */
-#define ZFS_META_RELEASE "437-FreeBSD_g8170eb6eb"
+#define ZFS_META_RELEASE "539-FreeBSD_g1d0b94c4e"
 
 /* Define the project version. */
 #define ZFS_META_VERSION "2.3.99"

@@ -30,6 +30,7 @@
 
 #include "opt_witness.h"
 #include "opt_hwpmc_hooks.h"
+#include "opt_hwt_hooks.h"
 
 #include <sys/systm.h>
 #include <sys/asan.h>
@@ -59,6 +60,9 @@
 #include <sys/cpuset.h>
 #ifdef	HWPMC_HOOKS
 #include <sys/pmckern.h>
+#endif
+#ifdef HWT_HOOKS
+#include <dev/hwt/hwt_hook.h>
 #endif
 #include <sys/priv.h>
 
@@ -567,7 +571,7 @@ threadinit(void)
 
 	/*
 	 * Thread structures are specially aligned so that (at least) the
-	 * 5 lower bits of a pointer to 'struct thead' must be 0.  These bits
+	 * 5 lower bits of a pointer to 'struct thread' must be 0.  These bits
 	 * are used by synchronization primitives to store flags in pointers to
 	 * such structures.
 	 */
@@ -1002,6 +1006,11 @@ thread_exit(void)
 	} else if (PMC_SYSTEM_SAMPLING_ACTIVE())
 		PMC_CALL_HOOK_UNLOCKED(td, PMC_FN_THR_EXIT_LOG, NULL);
 #endif
+
+#ifdef HWT_HOOKS
+	HWT_CALL_HOOK(td, HWT_THREAD_EXIT, NULL);
+#endif
+
 	PROC_UNLOCK(p);
 	PROC_STATLOCK(p);
 	thread_lock(td);
