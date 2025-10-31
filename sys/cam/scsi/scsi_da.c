@@ -2408,11 +2408,11 @@ dasysctlinit(void *context, int pending)
 	SYSCTL_ADD_PROC(&softc->sysctl_ctx, SYSCTL_CHILDREN(softc->sysctl_tree),
 	    OID_AUTO, "rotating", CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
 	    &softc->flags, (u_int)DA_FLAG_ROTATING, dabitsysctl, "I",
-	    "Rotating media *DEPRECATED* gone in FreeBSD 15");
+	    "Rotating media *DEPRECATED* gone in FreeBSD 16");
 	SYSCTL_ADD_PROC(&softc->sysctl_ctx, SYSCTL_CHILDREN(softc->sysctl_tree),
 	    OID_AUTO, "unmapped_io", CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
 	    &softc->flags, (u_int)DA_FLAG_UNMAPPEDIO, dabitsysctl, "I",
-	    "Unmapped I/O support *DEPRECATED* gone in FreeBSD 15");
+	    "Unmapped I/O support *DEPRECATED* gone in FreeBSD 16");
 
 #ifdef CAM_TEST_FAILURE
 	SYSCTL_ADD_PROC(&softc->sysctl_ctx, SYSCTL_CHILDREN(softc->sysctl_tree),
@@ -6830,7 +6830,7 @@ scsi_ata_zac_mgmt_out(struct ccb_scsiio *csio, uint32_t retries,
 			/*
 			 * For SEND FPDMA QUEUED, the transfer length is
 			 * encoded in the FEATURE register, and 0 means
-			 * that 65536 512 byte blocks are to be tranferred.
+			 * that 65536 512 byte blocks are to be transferred.
 			 * In practice, it seems unlikely that we'll see
 			 * a transfer that large, and it may confuse the
 			 * the SAT layer, because generally that means that
@@ -6916,7 +6916,7 @@ scsi_ata_zac_mgmt_in(struct ccb_scsiio *csio, uint32_t retries,
 		/*
 		 * For RECEIVE FPDMA QUEUED, the transfer length is
 		 * encoded in the FEATURE register, and 0 means
-		 * that 65536 512 byte blocks are to be tranferred.
+		 * that 65536 512 byte blocks are to be transferred.
 		 * In practice, it seems unlikely that we'll see
 		 * a transfer that large, and it may confuse the
 		 * the SAT layer, because generally that means that

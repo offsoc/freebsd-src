@@ -44,6 +44,7 @@
 #include <sys/malloc.h>
 #include <sys/endian.h>
 #include <sys/cons.h>
+#include <sys/power.h>
 #include <sys/proc.h>
 #include <sys/reboot.h>
 #include <sys/sbuf.h>
@@ -878,8 +879,8 @@ static  int		adaerror(union ccb *ccb, uint32_t cam_flags,
 				uint32_t sense_flags);
 static callout_func_t	adasendorderedtag;
 static void		adashutdown(void *arg, int howto);
-static void		adasuspend(void *arg);
-static void		adaresume(void *arg);
+static void		adasuspend(void *arg, enum power_stype stype);
+static void		adaresume(void *arg, enum power_stype stype);
 
 #ifndef ADA_DEFAULT_TIMEOUT
 #define ADA_DEFAULT_TIMEOUT 30	/* Timeout in seconds */
@@ -1556,11 +1557,11 @@ adasysctlinit(void *context, int pending)
 	SYSCTL_ADD_PROC(&softc->sysctl_ctx, SYSCTL_CHILDREN(softc->sysctl_tree),
 	    OID_AUTO, "unmapped_io", CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
 	    &softc->flags, (u_int)ADA_FLAG_UNMAPPEDIO, adabitsysctl, "I",
-	    "Use unmapped I/O. This sysctl is *DEPRECATED*, gone in FreeBSD 15");
+	    "Use unmapped I/O. This sysctl is *DEPRECATED*, gone in FreeBSD 16");
 	SYSCTL_ADD_PROC(&softc->sysctl_ctx, SYSCTL_CHILDREN(softc->sysctl_tree),
 	    OID_AUTO, "rotating", CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
 	    &softc->flags, (u_int)ADA_FLAG_ROTATING, adabitsysctl, "I",
-	    "Rotating media. This sysctl is *DEPRECATED*, gone in FreeBSD 15");
+	    "Rotating media. This sysctl is *DEPRECATED*, gone in FreeBSD 16");
 
 #ifdef CAM_TEST_FAILURE
 	/*
@@ -3747,7 +3748,7 @@ adashutdown(void *arg, int howto)
 }
 
 static void
-adasuspend(void *arg)
+adasuspend(void *arg, enum power_stype stype)
 {
 
 	adaflush();
@@ -3760,7 +3761,7 @@ adasuspend(void *arg)
 }
 
 static void
-adaresume(void *arg)
+adaresume(void *arg, enum power_stype stype)
 {
 	struct cam_periph *periph;
 	struct ada_softc *softc;

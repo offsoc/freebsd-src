@@ -32,6 +32,7 @@ struct itimerspec;
 struct itimerval;
 struct jail;
 struct kevent;
+struct kexec_segment;
 struct kld_file_stat;
 struct mac;
 struct module_stat;
@@ -468,6 +469,9 @@ typedef int (__sys_inotify_add_watch_at_t)(int, int, const char *, uint32_t);
 typedef int (__sys_inotify_rm_watch_t)(int, int);
 typedef int (__sys_getgroups_t)(int, gid_t *);
 typedef int (__sys_setgroups_t)(int, const gid_t *);
+typedef int (__sys_jail_attach_jd_t)(int);
+typedef int (__sys_jail_remove_jd_t)(int);
+typedef int (__sys_kexec_load_t)(uint64_t, u_long, struct kexec_segment *, u_long);
 
 _Noreturn void __sys__exit(int rval);
 int __sys_fork(void);
@@ -872,6 +876,9 @@ int __sys_inotify_add_watch_at(int fd, int dfd, const char * path, uint32_t mask
 int __sys_inotify_rm_watch(int fd, int wd);
 int __sys_getgroups(int gidsetsize, gid_t * gidset);
 int __sys_setgroups(int gidsetsize, const gid_t * gidset);
+int __sys_jail_attach_jd(int fd);
+int __sys_jail_remove_jd(int fd);
+int __sys_kexec_load(uint64_t entry, u_long nseg, struct kexec_segment * segments, u_long flags);
 __END_DECLS
 
 #endif /* __LIBSYS_H_ */

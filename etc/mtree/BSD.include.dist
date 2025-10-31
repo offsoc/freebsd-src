@@ -127,8 +127,6 @@
         ..
         agp
         ..
-        an
-        ..
         ciss
         ..
         evdev
@@ -190,8 +188,6 @@
         vmm
         ..
         wg
-        ..
-        wi
         ..
     ..
     devdctl
@@ -276,9 +272,7 @@
     ..
     kadm5
     ..
-    kdb5
-    ..
-    krb5
+    krb5                tags=package=kerberos-dev
     ..
     lib80211
     ..
@@ -305,8 +299,6 @@
     net80211
     ..
     netgraph
-        atm
-        ..
         bluetooth
             include
             ..

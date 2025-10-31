@@ -494,7 +494,7 @@ zfsctl_common_getattr(vnode_t *vp, vattr_t *vap)
 
 	vap->va_uid = 0;
 	vap->va_gid = 0;
-	vap->va_rdev = 0;
+	vap->va_rdev = NODEV;
 	/*
 	 * We are a purely virtual object, so we have no
 	 * blocksize or allocated blocks.
@@ -688,6 +688,8 @@ zfsctl_root_readdir(struct vop_readdir_args *ap)
 	 * count to return is 0.
 	 */
 	if (zfs_uio_offset(&uio) == 3 * sizeof (entry)) {
+		if (eofp != NULL)
+			*eofp = 1;
 		return (0);
 	}
 
@@ -760,8 +762,7 @@ zfsctl_common_pathconf(struct vop_pathconf_args *ap)
 		return (0);
 
 	case _PC_MIN_HOLE_SIZE:
-		*ap->a_retval = (int)SPA_MINBLOCKSIZE;
-		return (0);
+		return (EINVAL);
 
 	case _PC_ACL_EXTENDED:
 		*ap->a_retval = 0;

@@ -88,6 +88,11 @@ nvme_ns_ioctl(struct cdev *cdev, u_long cmd, caddr_t arg, int flag,
 		gnsid->nsid = ns->id;
 		break;
 	}
+	case DIOCGIDENT: {
+		uint8_t *sn = arg;
+		nvme_ctrlr_get_ident(ctrlr, sn);
+		break;
+	}
 	case DIOCGMEDIASIZE:
 		*(off_t *)arg = (off_t)nvme_ns_get_size(ns);
 		break;
@@ -129,7 +134,6 @@ static int
 nvme_ns_close(struct cdev *dev __unused, int flags, int fmt __unused,
     struct thread *td)
 {
-
 	return (0);
 }
 
@@ -138,10 +142,6 @@ nvme_ns_strategy_done(void *arg, const struct nvme_completion *cpl)
 {
 	struct bio *bp = arg;
 
-	/*
-	 * TODO: add more extensive translation of NVMe status codes
-	 *  to different bio error codes (i.e. EIO, EINVAL, etc.)
-	 */
 	if (nvme_completion_is_error(cpl)) {
 		bp->bio_error = EIO;
 		bp->bio_flags |= BIO_ERROR;
@@ -231,7 +231,6 @@ nvme_ns_get_model_number(struct nvme_namespace *ns)
 const struct nvme_namespace_data *
 nvme_ns_get_data(struct nvme_namespace *ns)
 {
-
 	return (&ns->data);
 }
 
@@ -631,7 +630,6 @@ nvme_ns_construct(struct nvme_namespace *ns, uint32_t id,
 void
 nvme_ns_destruct(struct nvme_namespace *ns)
 {
-
 	if (ns->cdev != NULL) {
 		if (ns->cdev->si_drv2 != NULL)
 			destroy_dev(ns->cdev->si_drv2);
