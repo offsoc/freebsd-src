@@ -31,11 +31,13 @@ MAN=		alloca.3 \
 		snl.3 \
 		stats.3 \
 		stdarg.3 \
+		stdbit.3 \
 		stdckdint.3 \
 		sysexits.3 \
 		tgmath.3 \
 		timeradd.3 \
-		tree.3
+		tree.3 \
+		unreachable.3
 
 MLINKS=		arb.3 ARB8_ENTRY.3 \
 		arb.3 ARB8_HEAD.3 \
@@ -203,6 +205,7 @@ MLINKS+=	Q_SIGNSHFT.3 Q_SSIGN.3 \
 MLINKS+=	queue.3 LIST_CLASS_ENTRY.3 \
 		queue.3 LIST_CLASS_HEAD.3 \
 		queue.3 LIST_EMPTY.3 \
+		queue.3 LIST_EMPTY_ATOMIC.3 \
 		queue.3 LIST_ENTRY.3 \
 		queue.3 LIST_FIRST.3 \
 		queue.3 LIST_FOREACH.3 \
@@ -224,6 +227,7 @@ MLINKS+=	queue.3 LIST_CLASS_ENTRY.3 \
 		queue.3 SLIST_CLASS_ENTRY.3 \
 		queue.3 SLIST_CLASS_HEAD.3 \
 		queue.3 SLIST_EMPTY.3 \
+		queue.3 SLIST_EMPTY_ATOMIC.3 \
 		queue.3 SLIST_ENTRY.3 \
 		queue.3 SLIST_FIRST.3 \
 		queue.3 SLIST_FOREACH.3 \
@@ -246,6 +250,7 @@ MLINKS+=	queue.3 LIST_CLASS_ENTRY.3 \
 		queue.3 STAILQ_CLASS_HEAD.3 \
 		queue.3 STAILQ_CONCAT.3 \
 		queue.3 STAILQ_EMPTY.3 \
+		queue.3 STAILQ_EMPTY_ATOMIC.3 \
 		queue.3 STAILQ_ENTRY.3 \
 		queue.3 STAILQ_FIRST.3 \
 		queue.3 STAILQ_FOREACH.3 \
@@ -270,6 +275,7 @@ MLINKS+=	queue.3 LIST_CLASS_ENTRY.3 \
 		queue.3 TAILQ_CLASS_HEAD.3 \
 		queue.3 TAILQ_CONCAT.3 \
 		queue.3 TAILQ_EMPTY.3 \
+		queue.3 TAILQ_EMPTY_ATOMIC.3 \
 		queue.3 TAILQ_ENTRY.3 \
 		queue.3 TAILQ_FIRST.3 \
 		queue.3 TAILQ_FOREACH.3 \
